@@ -1,0 +1,157 @@
+{
+  "datasets": [
+    {
+      "name": "who_subject_switch_user_agent",
+      "focus": "who",
+      "messages": [
+        {
+          "raw_message": "I like black coffee.",
+          "understanding": {
+            "topics": "coffee",
+            "emotions": "Positive",
+            "fact": "I like black coffee",
+            "attribue": ["adult"],
+            "index": 1
+          },
+          "timestamp": "2026-01-01T08:00:00Z",
+          "user_speak": true
+        },
+        {
+          "raw_message": "As assistant, I dislike coffee.",
+          "understanding": {
+            "topics": "coffee",
+            "emotions": "Negative",
+            "fact": "assistant dislike coffee",
+            "attribue": ["assistant"],
+            "index": 2
+          },
+          "timestamp": "2026-01-02T08:00:00Z",
+          "user_speak": false
+        }
+      ],
+      "expected": {
+        "contains_conflict": false
+      }
+    },
+    {
+      "name": "what_preference_flip",
+      "focus": "what",
+      "messages": [
+        {
+          "raw_message": "I love running every weekend.",
+          "understanding": {
+            "topics": "running",
+            "emotions": "Positive",
+            "fact": "I love running",
+            "attribue": ["healthy"],
+            "index": 3
+          },
+          "timestamp": "2026-02-01T08:00:00Z",
+          "user_speak": true
+        },
+        {
+          "raw_message": "I hate running now.",
+          "understanding": {
+            "topics": "running",
+            "emotions": "Negative",
+            "fact": "I hate running now",
+            "attribue": ["knee pain"],
+            "index": 4
+          },
+          "timestamp": "2026-02-02T08:00:00Z",
+          "user_speak": true
+        }
+      ],
+      "expected": {
+        "contains_conflict": true
+      }
+    },
+    {
+      "name": "when_temporal_conflict",
+      "focus": "when",
+      "messages": [
+        {
+          "raw_message": "2026-03-01 I study at home.",
+          "understanding": {
+            "topics": "study",
+            "emotions": "Neutral",
+            "fact": "I study at home",
+            "attribue": ["student"],
+            "index": 5
+          },
+          "timestamp": "2026-03-01T18:00:00Z",
+          "user_speak": true
+        },
+        {
+          "raw_message": "2026-04-01 I study at home.",
+          "understanding": {
+            "topics": "study",
+            "emotions": "Neutral",
+            "fact": "I study at home",
+            "attribue": ["student"],
+            "index": 6
+          },
+          "timestamp": "2026-04-01T18:00:00Z",
+          "user_speak": true
+        }
+      ],
+      "expected": {
+        "contains_conflict": true
+      }
+    },
+    {
+      "name": "where_location_conflict",
+      "focus": "where",
+      "messages": [
+        {
+          "raw_message": "I work at home this month.",
+          "understanding": {
+            "topics": "work",
+            "emotions": "Neutral",
+            "fact": "I work at home",
+            "attribue": ["engineer"],
+            "index": 7
+          },
+          "timestamp": "2026-05-01T09:00:00Z",
+          "user_speak": true
+        },
+        {
+          "raw_message": "I work in the office now.",
+          "understanding": {
+            "topics": "work",
+            "emotions": "Neutral",
+            "fact": "I work in the office",
+            "attribue": ["engineer"],
+            "index": 8
+          },
+          "timestamp": "2026-05-01T09:00:00Z",
+          "user_speak": true
+        }
+      ],
+      "expected": {
+        "contains_conflict": true
+      }
+    },
+    {
+      "name": "which_scope_missing",
+      "focus": "which",
+      "messages": [
+        {
+          "raw_message": "I feel great today.",
+          "understanding": {
+            "topics": "",
+            "emotions": "Positive",
+            "fact": "",
+            "attribue": ["optimistic"],
+            "index": 9
+          },
+          "timestamp": "2026-06-01T10:00:00Z",
+          "user_speak": true
+        }
+      ],
+      "expected": {
+        "first_decision": "IGNORE"
+      }
+    }
+  ]
+}

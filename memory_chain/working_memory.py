@@ -33,9 +33,9 @@ class Working_Memory:
         self.client = client
         ensure_directory_exists(self.file_path)
 
-    def add_message_to_working_memory(self,raw_message,message,topics,emotions,reason,index,timestamp,fact,attribute):
+    def add_message_to_working_memory(self,raw_message,message,topics,emotions,reason,index,timestamp,fact,attribute,metadata=None,conflict=None):
 
-        self.working_memory_queue.put({"user_id":self.user_id,"raw_message":raw_message,"message":message,"topics":topics,"emotions":emotions,"reason":reason,"index":index,"timestamp":timestamp,"fact":fact,"attribue":attribute})
+        self.working_memory_queue.put({"user_id":self.user_id,"raw_message":raw_message,"message":message,"topics":topics,"emotions":emotions,"reason":reason,"index":index,"timestamp":timestamp,"fact":fact,"attribue":attribute,"metadata":metadata or {},"conflict":conflict or {}})
 
         if (self.working_memory_queue.qsize() == self.working_memory_max_size):
             is_full = True    

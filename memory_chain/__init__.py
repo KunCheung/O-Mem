@@ -18,3 +18,5 @@ from .episodic_memory import *
 from .working_memory import *
 from .persona_memory import *
 from .memory import *
+
+from .conflict_memory import *
