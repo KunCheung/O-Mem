@@ -14,12 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+import os
 import numpy as np
 # import faiss
 from collections import deque
 from .utils import *
 from .working_memory import Working_Memory
 from .prompts import * 
+from .conflict_memory import ConflictAwareMetadataProcessor
 import random
 import time
 import re
@@ -54,8 +56,56 @@ class MemoryManager:
         self.idx = memory_index
         self.client = llm_client
         self.embedding_model = embedding_model
-    
+        self.memory_dir = memory_dir
+        self.conflict_ledger_path = os.path.join(self.memory_dir, f"conflict_memory_{self.idx}.json")
+        self.version_ledger_path = os.path.join(self.memory_dir, f"memory_versions_{self.idx}.json")
+        ensure_directory_exists(self.conflict_ledger_path)
+        ensure_directory_exists(self.version_ledger_path)
+        self.metadata_processor = ConflictAwareMetadataProcessor(self.conflict_ledger_path, self.version_ledger_path)
+
         print("The No."+str(self.idx)+" sample "+user_name+" and "+ agent_name+ "'s memory manager has been established")
+
+    def create_messages_for_extract_5w_fields(self, message, understanding, timestamp, user_speak):
+
+        role = "user" if user_speak else "agent"
+        system_prompt = """
+You extract structured 5W metadata from a dialogue turn.
+Return strict JSON only with keys: who, what, which, where, when.
+Each key must map to an object.
+"""
+        user_prompt = f"""
+Message: {message}
+Understanding: {understanding}
+Timestamp: {timestamp}
+Speaker role: {role}
+
+Output JSON schema:
+{{
+  "who": {{"subject": "user|agent|third_party", "entity_id": "string", "confidence": 0.0}},
+  "what": {{"claim_type": "fact|preference|plan|status|identity", "proposition": "string", "polarity": "positive|negative|neutral", "confidence": 0.0}},
+  "which": {{"scope": "string", "evidence_span": ["string"], "source_turn_ids": [int]}},
+  "where": {{"location_type": "named|contextual|unknown", "location_value": "string", "confidence": 0.0}},
+  "when": {{"time_type": "relative|absolute|point|unknown", "time_value": "string", "recency_score": 0.0}}
+}}
+"""
+        return [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+
+    async def extract_5w_fields_with_llm(self, message, understanding, timestamp, user_speak):
+
+        llm_result = {}
+        for _ in range(2):
+            try:
+                response = await self.llm_client.chat.completions.create(
+                    model=self.llm_model,
+                    messages=self.create_messages_for_extract_5w_fields(message, understanding, timestamp, user_speak),
+                    temperature=0.0,
+                )
+                llm_result = json.loads(response.choices[0].message.content)
+                if isinstance(llm_result, dict):
+                    return llm_result
+            except Exception:
+                continue
+        return {}
 
     async def receive_message(self,message,index,client,timestamp,user_speak):
 
@@ -88,9 +138,35 @@ class MemoryManager:
                 continue
         
 
+        message_understanding_record = {
+            "raw_message": message,
+            "message": understanding_with_index,
+            "topics": topics,
+            "emotions": emotions,
+            "reason": reason,
+            "index": index,
+            "timestamp": timestamp,
+            "fact": fact,
+            "attribue": attributes,
+        }
+
+        episodic_memory = self.memory_system.user_episodic_memory if user_speak else self.memory_system.agent_episodic_memory
+        llm_5w_fields = await self.extract_5w_fields_with_llm(message, message_understanding_record, timestamp, user_speak)
+        metadata = self.metadata_processor.build_metadata_envelope(message, message_understanding_record, timestamp, user_speak, llm_fields=llm_5w_fields)
+        scope_history = self.metadata_processor.get_versions_by_scope(metadata.get("which", {}).get("scope", ""), metadata.get("who", {}).get("subject"))
+        conflict = self.metadata_processor.detect_conflicts(
+            metadata,
+            episodic_memory.event_episodic_memory_dict,
+            episodic_memory.fact_episodic_memory_dict,
+            episodic_memory.attribute_episodic_memory_dict,
+            version_history=scope_history,
+        )
+        self.metadata_processor.maybe_record_conflict(metadata, conflict)
+        self.metadata_processor.register_version(metadata, conflict, index)
+
         if user_speak:
             is_full,all_messages = self.memory_system.user_working_memory.add_message_to_working_memory(raw_message=message,message=understanding_with_index,topics=topics,
-            emotions=emotions,reason=reason,index=index,timestamp=timestamp,fact=fact,attribute=attributes)
+            emotions=emotions,reason=reason,index=index,timestamp=timestamp,fact=fact,attribute=attributes,metadata=metadata,conflict=conflict)
             if is_full:
                 oldest_user_memory_list = self.memory_system.user_working_memory.pop_oldest_working_memory()
                 await self.update_user_episodic_memory(oldest_user_memory_list)
@@ -98,7 +174,7 @@ class MemoryManager:
 
 
         else:
-            is_full,all_messages = self.memory_system.agent_working_memory.add_message_to_working_memory(raw_message=message,message=understanding_with_index,topics=topics,emotions=emotions,reason=reason,index=index,timestamp=timestamp,fact=fact,attribute=attributes)
+            is_full,all_messages = self.memory_system.agent_working_memory.add_message_to_working_memory(raw_message=message,message=understanding_with_index,topics=topics,emotions=emotions,reason=reason,index=index,timestamp=timestamp,fact=fact,attribute=attributes,metadata=metadata,conflict=conflict)
             if is_full:
                 oldest_agent_memory_list = self.memory_system.agent_working_memory.pop_oldest_working_memory()
                 await self.update_agent_episodic_memory(oldest_agent_memory_list)
@@ -447,6 +523,9 @@ class MemoryManager:
                 
         top_indices = np.argsort(similarities)[-10:][::-1]
         related_messages= [episodic_memory_string_list[i] for i in top_indices]
+        conflict_hints = self.metadata_processor.get_conflict_hints_for_query(question, top_k=3)
+        if conflict_hints:
+            related_messages = related_messages + ["\n".join(conflict_hints)]
 
         return related_messages
 
